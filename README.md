@@ -1,126 +1,101 @@
 # location-bot
 
-A LINE push notification bot that sends a message to all active recipients when you arrive home. Trigger it with an iOS Shortcut (or any HTTP client).
+A LINE push notification bot that sends a message to all active recipients when you arrive home. Trigger it automatically via an iOS Shortcut or manually via HTTP.
 
 ## Setup
 
-### 1. LINE Channel
+### 1. Create a LINE channel
 
 1. Go to the [LINE Developers Console](https://developers.line.biz/console/) and create a **Messaging API** channel.
-2. Copy the **Channel Secret** and issue a **Channel Access Token**.
-3. Under **Webhook settings**, enable webhooks and set the URL to `https://<your-host>/webhook`.
+2. **Basic settings** tab → copy the **Channel secret** (a 32-character hex string — NOT the Channel ID number at the top).
+3. **Messaging API** tab → scroll to **Channel access token** → click **Issue** → copy the token (it's a very long string, 150+ characters).
+4. **Messaging API** tab → scroll to **LINE Official Account features** → set **Group and multi-person chats** to **Allow** (required for group chat support).
 
-### 2. Install and configure
+### 2. Deploy to Railway
 
+1. Push this repo to GitHub.
+2. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo** → select this repo.
+3. Go to **Variables** and add all keys from `.env.example` with your real values.
+4. In your service, add a **Volume** mounted at `/app/data` to persist the SQLite database across deploys.
+5. Once deployed, copy your Railway public domain (e.g. `https://location-bot-production.up.railway.app`).
+
+### 3. Configure the LINE webhook
+
+1. LINE Developers Console → **Messaging API** tab → set **Webhook URL** to `https://<your-railway-domain>/webhook`.
+2. Enable the **Use webhook** toggle (easy to miss — it must be ON).
+3. Click **Verify** — should return a green checkmark.
+
+### 4. Add recipients
+
+**Individual users:** Anyone who follows the bot on LINE is automatically saved as a recipient.
+
+> **Already friends with the bot?** If you added the bot before the webhook was configured, the follow event was never received. Fix it by removing the bot as a friend and re-adding it — that fires a fresh follow event.
+
+**Group chats:** Invite the bot to a group. It joins automatically and the group is saved as a recipient. The message will be sent to the entire group when triggered.
+
+You can verify recipients at any time:
 ```bash
-# Install dependencies
-npm install
-
-# Copy the example env and fill in your values
-cp .env.example .env
+curl https://<your-railway-domain>/recipients -H "X-Secret: your_trigger_secret"
 ```
 
-Edit `.env` with your credentials (see [Environment Variables](#environment-variables)).
+### 5. Set up iOS Shortcut (Wi-Fi trigger — recommended)
 
-### 3. Run the server
+The Wi-Fi trigger fires the moment your phone connects to your home network — more reliable than GPS and works without special location permissions.
 
-```bash
-# Production
-npm start
-
-# Development (auto-reloads on file changes)
-npm run dev
-```
-
-The server creates a `data/bot.db` SQLite file automatically on first run.
+1. Open **Shortcuts** → **Automation** tab → **+** → **Personal Automation**
+2. Choose **Wi-Fi** → enter your home network name → set to trigger on **Connect**
+3. Add a **Get Contents of URL** action:
+   - URL: `https://<your-railway-domain>/arrived-home`
+   - Method: `POST`
+   - Header: `X-Secret` = `your_trigger_secret`
+4. Turn off **Ask Before Running**
+5. Save
 
 ## Environment Variables
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `LINE_CHANNEL_ACCESS_TOKEN` | Yes | — | Long-lived access token from LINE Developers Console |
-| `LINE_CHANNEL_SECRET` | Yes | — | Channel secret, used to verify webhook signatures |
-| `TRIGGER_SECRET` | Yes | — | Shared secret sent as `X-Secret` header to protect trigger/admin endpoints |
+| `LINE_CHANNEL_ACCESS_TOKEN` | Yes | — | Long-lived access token from LINE Developers Console → Messaging API tab (150+ character string) |
+| `LINE_CHANNEL_SECRET` | Yes | — | Found under Basic settings tab (32-char hex string — not the Channel ID) |
+| `TRIGGER_SECRET` | Yes | — | Shared secret sent as `X-Secret` header to protect trigger/admin endpoints. Generate with: `openssl rand -hex 32` |
 | `HOME_MESSAGE` | No | `I just got home! 🏠` | Text pushed to all recipients when triggered |
-| `PORT` | No | `3000` | Port the Express server listens on |
+| `PORT` | No | `3000` | Port the Express server listens on (Railway sets this automatically) |
 
 ## API Endpoints
 
 ### `POST /arrived-home`
-Protected by `X-Secret` header. Pushes `HOME_MESSAGE` to all active recipients. Has a 30-minute cooldown.
+Protected by `X-Secret` header. Pushes `HOME_MESSAGE` to all active recipients. Has a 30-minute cooldown to prevent duplicate triggers.
 
 ```bash
-curl -X POST https://<host>/arrived-home \
-  -H "X-Secret: your_trigger_secret"
+curl -X POST https://<host>/arrived-home -H "X-Secret: your_trigger_secret"
 ```
 
 **Response:**
 ```json
-{ "sent": 2, "failed": 0, "details": { "sent": ["Uabc...", "Uxyz..."], "failed": [] } }
+{ "sent": 2, "failed": 0, "details": { "sent": ["Uabc...", "Cabc..."], "failed": [] } }
 ```
 
 Returns `429` with `remainingMinutes` if the cooldown is still active.
 
 ### `POST /webhook`
-LINE webhook endpoint. Verifies `X-Line-Signature` automatically. Saves users who follow the channel to the DB; marks them inactive on unfollow.
+LINE webhook endpoint. Verifies `X-Line-Signature` automatically. Handles `follow`/`unfollow` (1:1) and `join`/`leave` (group) events.
 
 ### `GET /recipients`
-Protected. Returns all active recipient user IDs.
+Protected. Returns all active recipients with their display names.
 
 ```bash
 curl https://<host>/recipients -H "X-Secret: your_trigger_secret"
 ```
 
 ### `DELETE /recipients/:userId`
-Protected. Permanently removes a recipient.
+Protected. Removes a recipient by user ID or group ID.
 
 ```bash
-curl -X DELETE https://<host>/recipients/Uabc123 \
-  -H "X-Secret: your_trigger_secret"
+curl -X DELETE https://<host>/recipients/Uabc123 -H "X-Secret: your_trigger_secret"
 ```
 
 ### `GET /health`
 Returns server uptime, active recipient count, and monthly push count (no auth required).
-
-```json
-{ "status": "ok", "uptimeSeconds": 3600, "activeRecipients": 2, "monthlyMessageCount": 12 }
-```
-
-## iOS Shortcuts Setup
-
-iOS Shortcuts can call the `/arrived-home` endpoint automatically when you arrive at a specific location (geofence trigger).
-
-1. **Create the Shortcut:**
-   - Open the **Shortcuts** app → tap **+** to create a new shortcut.
-   - Add a **Get Contents of URL** action.
-   - Set the URL to `https://<your-host>/arrived-home`.
-   - Set **Method** to `POST`.
-   - Add a header: `X-Secret` = `your_trigger_secret`.
-
-2. **Add an Automation (geofence trigger):**
-   - Tap the **Automation** tab → **+** → **Personal Automation**.
-   - Choose **Arrive** → set your home location and a radius.
-   - Select **Run Immediately** (disable "Ask Before Running").
-   - Add a **Run Shortcut** action pointing to the shortcut from step 1.
-
-The bot will fire once when you arrive and then respect the 30-minute cooldown to prevent duplicate notifications.
-
-## Deploying to Railway
-
-Railway is the easiest hosting option — it detects the `Dockerfile` automatically and gives you a free public HTTPS URL.
-
-1. Push this repo to GitHub.
-2. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo** → select this repo.
-3. In your service settings, add a **Volume** mounted at `/app/data` (this keeps the SQLite DB across deploys and restarts).
-4. Go to **Variables** and add all keys from `.env.example` with your real values.
-5. Railway will build and deploy automatically. Once live, copy the generated domain (e.g. `https://location-bot-production.up.railway.app`).
-6. Paste that URL into LINE Developers Console as your Webhook URL: `https://<your-railway-domain>/webhook`.
-
-Re-deploys trigger automatically on every push to your connected branch.
-
-## Hosting
-
-Any always-on server with a public HTTPS URL works (Railway, Fly.io, Render, VPS, etc.). LINE requires a valid TLS certificate on the webhook URL.
 
 ## Rate Limits
 
