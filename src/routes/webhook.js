@@ -13,15 +13,16 @@ router.post('/', middleware(lineConfig), (req, res) => {
   const events = req.body.events || [];
 
   for (const event of events) {
-    const userId = event.source && event.source.userId;
-    if (!userId) continue;
+    const source = event.source || {};
+    const recipientId = source.groupId || source.roomId || source.userId;
+    if (!recipientId) continue;
 
-    if (event.type === 'follow') {
-      queries.upsertRecipient.run(userId);
-      console.log(`Recipient added: ${userId}`);
-    } else if (event.type === 'unfollow') {
-      queries.deactivateRecipient.run(userId);
-      console.log(`Recipient deactivated: ${userId}`);
+    if (event.type === 'follow' || event.type === 'join') {
+      queries.upsertRecipient.run(recipientId);
+      console.log(`Recipient added: ${recipientId}`);
+    } else if (event.type === 'unfollow' || event.type === 'leave') {
+      queries.deactivateRecipient.run(recipientId);
+      console.log(`Recipient deactivated: ${recipientId}`);
     }
   }
 
