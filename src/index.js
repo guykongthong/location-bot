@@ -12,12 +12,18 @@ app.use('/arrived-home', require('./routes/arrived'));
 app.use('/recipients', require('./routes/recipients'));
 app.use('/health', require('./routes/health'));
 
-// Temporary: reset cooldown without waiting 30 min
+// Temporary: admin helpers
 const auth = require('./middleware/auth');
 const { queries } = require('./db');
 app.post('/admin/reset-cooldown', auth, (req, res) => {
   queries.setConfig.run('last_trigger', '0');
   res.json({ ok: true });
+});
+app.post('/admin/add-recipient', auth, (req, res) => {
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+  queries.upsertRecipient.run(userId);
+  res.json({ ok: true, activeCount: queries.activeCount.get().count });
 });
 
 const PORT = process.env.PORT || 3000;
