@@ -16,8 +16,6 @@ router.post('/', middleware(lineConfig), (req, res) => {
     const userId = event.source && event.source.userId;
     if (!userId) continue;
 
-    console.log(`Webhook event: type=${event.type} userId=${userId}`);
-
     if (event.type === 'follow') {
       queries.upsertRecipient.run(userId);
       console.log(`Recipient added: ${userId}`);
