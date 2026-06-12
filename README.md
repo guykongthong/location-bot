@@ -105,6 +105,19 @@ iOS Shortcuts can call the `/arrived-home` endpoint automatically when you arriv
 
 The bot will fire once when you arrive and then respect the 30-minute cooldown to prevent duplicate notifications.
 
+## Deploying to Railway
+
+Railway is the easiest hosting option — it detects the `Dockerfile` automatically and gives you a free public HTTPS URL.
+
+1. Push this repo to GitHub.
+2. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo** → select this repo.
+3. In your service settings, add a **Volume** mounted at `/app/data` (this keeps the SQLite DB across deploys and restarts).
+4. Go to **Variables** and add all keys from `.env.example` with your real values.
+5. Railway will build and deploy automatically. Once live, copy the generated domain (e.g. `https://location-bot-production.up.railway.app`).
+6. Paste that URL into LINE Developers Console as your Webhook URL: `https://<your-railway-domain>/webhook`.
+
+Re-deploys trigger automatically on every push to your connected branch.
+
 ## Hosting
 
 Any always-on server with a public HTTPS URL works (Railway, Fly.io, Render, VPS, etc.). LINE requires a valid TLS certificate on the webhook URL.
