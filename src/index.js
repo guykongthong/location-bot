@@ -8,7 +8,9 @@ const app = express();
 app.use('/webhook', require('./routes/webhook'));
 
 app.use(express.json());
-app.use('/arrived-home', require('./routes/arrived'));
+const createArrivedRouter = require('./routes/arrived');
+app.use('/arrived-home', createArrivedRouter(process.env.HOME_MESSAGE || 'I just got home! 🏠', 'last_trigger_home'));
+app.use('/arrived-uni', createArrivedRouter(process.env.UNI_MESSAGE || 'คุณกายถึงมหาลัยแล้ว', 'last_trigger_uni'));
 app.use('/recipients', require('./routes/recipients'));
 app.use('/health', require('./routes/health'));
 
