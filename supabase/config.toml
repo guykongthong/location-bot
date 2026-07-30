@@ -394,6 +394,9 @@ verify_jwt = false
 [functions.arrived-uni]
 verify_jwt = false
 
+[functions.recipients]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
