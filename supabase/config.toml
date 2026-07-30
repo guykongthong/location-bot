@@ -388,6 +388,12 @@ deno_version = 2
 [functions.webhook]
 verify_jwt = false
 
+[functions.arrived-home]
+verify_jwt = false
+
+[functions.arrived-uni]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
