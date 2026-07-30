@@ -20,3 +20,39 @@ export async function verifySignature(
   const computed = btoa(String.fromCharCode(...new Uint8Array(sigBuffer)));
   return computed === signature;
 }
+
+export async function pushMessage(
+  accessToken: string,
+  to: string,
+  text: string,
+): Promise<void> {
+  const res = await fetch("https://api.line.me/v2/bot/message/push", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ to, messages: [{ type: "text", text }] }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`LINE push failed (${res.status}): ${body}`);
+  }
+}
+
+export async function resolveName(
+  accessToken: string,
+  id: string,
+): Promise<string | null> {
+  const url = id.startsWith("C")
+    ? `https://api.line.me/v2/bot/group/${id}/summary`
+    : `https://api.line.me/v2/bot/profile/${id}`;
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) return null;
+
+  const data = await res.json();
+  return id.startsWith("C") ? data.groupName : data.displayName;
+}
