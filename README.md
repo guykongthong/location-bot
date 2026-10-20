@@ -2,6 +2,46 @@
 
 A LINE push notification bot that sends a message to all active recipients when you arrive home (or at uni). Trigger it automatically via an iOS Shortcut or manually via HTTP. Runs entirely on Supabase Edge Functions + Postgres.
 
+## How it works
+
+```
+iPhone joins home Wi-Fi
+        |
+iOS Shortcut automation  --POST + X-Secret-->  arrived-home edge function
+                                                      |
+                                       reads active recipients from Postgres
+                                                      |
+                                       LINE Messaging API push to each one
+```
+
+People get added automatically: anyone who follows the bot, or any group the bot is invited to, is saved as a recipient by the LINE webhook. Each trigger has its own 30-minute cooldown so a flaky Wi-Fi connection does not send duplicates.
+
+## Tech stack
+
+- Supabase Edge Functions (Deno, TypeScript)
+- Supabase Postgres for recipients and message counts
+- LINE Messaging API for push messages and the follow/join webhook
+- iOS Shortcuts for the Wi-Fi arrival trigger
+
+## Project structure
+
+```
+supabase/
+  functions/
+    arrived-home/  arrived-uni/   trigger endpoints
+    webhook/                      LINE follow, unfollow, join, leave events
+    recipients/                   list and remove recipients
+    health/                       recipient and monthly push counts
+    _shared/                      auth, LINE client, database access, and their tests
+  migrations/                     database schema
+```
+
+## Testing
+
+```bash
+deno test supabase/functions/_shared/
+```
+
 ## Setup
 
 ### 1. Create a LINE channel
