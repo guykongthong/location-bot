@@ -1,6 +1,6 @@
 # location-bot
 
-A LINE push notification bot that sends a message to all active recipients when you arrive home. Trigger it automatically via an iOS Shortcut or manually via HTTP.
+A LINE push notification bot that sends a message to all active recipients when you arrive home (or at uni). Trigger it automatically via an iOS Shortcut or manually via HTTP. Runs entirely on Supabase Edge Functions + Postgres.
 
 ## Setup
 
@@ -11,17 +11,39 @@ A LINE push notification bot that sends a message to all active recipients when 
 3. **Messaging API** tab → scroll to **Channel access token** → click **Issue** → copy the token (it's a very long string, 150+ characters).
 4. **Messaging API** tab → scroll to **LINE Official Account features** → set **Group and multi-person chats** to **Allow** (required for group chat support).
 
-### 2. Deploy to Railway
+### 2. Deploy to Supabase
 
-1. Push this repo to GitHub.
-2. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo** → select this repo.
-3. Go to **Variables** and add all keys from `.env.example` with your real values.
-4. In your service, add a **Volume** mounted at `/app/data` to persist the SQLite database across deploys.
-5. Once deployed, copy your Railway public domain (e.g. `https://location-bot-production.up.railway.app`).
+1. Create a project at [supabase.com](https://supabase.com) and note its **Project Reference** (`<PROJECT_REF>`).
+2. Link this repo to the project:
+   ```bash
+   supabase init
+   supabase link --project-ref <PROJECT_REF>
+   ```
+3. Push the database schema:
+   ```bash
+   supabase db push
+   ```
+4. Set the required secrets (see [Environment Variables](#environment-variables) below):
+   ```bash
+   supabase secrets set LINE_CHANNEL_ACCESS_TOKEN=your_channel_access_token_here
+   supabase secrets set LINE_CHANNEL_SECRET=your_channel_secret_here
+   supabase secrets set TRIGGER_SECRET=your_shared_secret_here
+   supabase secrets set HOME_MESSAGE="I just got home! 🏠"
+   supabase secrets set UNI_MESSAGE="I just got to uni!"
+   ```
+5. Deploy the edge functions:
+   ```bash
+   supabase functions deploy webhook
+   supabase functions deploy arrived-home
+   supabase functions deploy arrived-uni
+   supabase functions deploy recipients
+   supabase functions deploy health
+   ```
+6. Each function is now live at `https://<PROJECT_REF>.supabase.co/functions/v1/<name>`.
 
 ### 3. Configure the LINE webhook
 
-1. LINE Developers Console → **Messaging API** tab → set **Webhook URL** to `https://<your-railway-domain>/webhook`.
+1. LINE Developers Console → **Messaging API** tab → set **Webhook URL** to `https://<PROJECT_REF>.supabase.co/functions/v1/webhook`.
 2. Enable the **Use webhook** toggle (easy to miss — it must be ON).
 3. Click **Verify** — should return a green checkmark.
 
@@ -35,17 +57,17 @@ A LINE push notification bot that sends a message to all active recipients when 
 
 You can verify recipients at any time:
 ```bash
-curl https://<your-railway-domain>/recipients -H "X-Secret: your_trigger_secret"
+curl https://<PROJECT_REF>.supabase.co/functions/v1/recipients -H "X-Secret: your_trigger_secret"
 ```
 
 ### 5. Set up iOS Shortcut (Wi-Fi trigger — recommended)
 
-The Wi-Fi trigger fires the moment your phone connects to your home network — more reliable than GPS and works without special location permissions.
+The Wi-Fi trigger fires the moment your phone connects to a network — more reliable than GPS and works without special location permissions.
 
 1. Open **Shortcuts** → **Automation** tab → **+** → **Personal Automation**
-2. Choose **Wi-Fi** → enter your home network name → set to trigger on **Connect**
+2. Choose **Wi-Fi** → enter your home (or uni) network name → set to trigger on **Connect**
 3. Add a **Get Contents of URL** action:
-   - URL: `https://<your-railway-domain>/arrived-home`
+   - URL: `https://<PROJECT_REF>.supabase.co/functions/v1/arrived-home` (or `arrived-uni`)
    - Method: `POST`
    - Header: `X-Secret` = `your_trigger_secret`
 4. Turn off **Ask Before Running**
@@ -53,21 +75,27 @@ The Wi-Fi trigger fires the moment your phone connects to your home network — 
 
 ## Environment Variables
 
+Set these with `supabase secrets set <KEY>=<value>` (see [Deploy to Supabase](#2-deploy-to-supabase)).
+
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `LINE_CHANNEL_ACCESS_TOKEN` | Yes | — | Long-lived access token from LINE Developers Console → Messaging API tab (150+ character string) |
 | `LINE_CHANNEL_SECRET` | Yes | — | Found under Basic settings tab (32-char hex string — not the Channel ID) |
 | `TRIGGER_SECRET` | Yes | — | Shared secret sent as `X-Secret` header to protect trigger/admin endpoints. Generate with: `openssl rand -hex 32` |
-| `HOME_MESSAGE` | No | `I just got home! 🏠` | Text pushed to all recipients when triggered |
-| `PORT` | No | `3000` | Port the Express server listens on (Railway sets this automatically) |
+| `HOME_MESSAGE` | No | `I just got home! 🏠` | Text pushed to all recipients when `/arrived-home` is triggered |
+| `UNI_MESSAGE` | No | `คุณกายถึงมหาลัยแล้ว` | Text pushed to all recipients when `/arrived-uni` is triggered |
+| `SUPABASE_URL` | Yes | — | Auto-available to edge functions at runtime |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | — | Auto-available to edge functions at runtime |
 
 ## API Endpoints
+
+All endpoints are served from `https://<PROJECT_REF>.supabase.co/functions/v1/<name>`.
 
 ### `POST /arrived-home`
 Protected by `X-Secret` header. Pushes `HOME_MESSAGE` to all active recipients. Has a 30-minute cooldown to prevent duplicate triggers.
 
 ```bash
-curl -X POST https://<host>/arrived-home -H "X-Secret: your_trigger_secret"
+curl -X POST https://<PROJECT_REF>.supabase.co/functions/v1/arrived-home -H "X-Secret: your_trigger_secret"
 ```
 
 **Response:**
@@ -77,6 +105,13 @@ curl -X POST https://<host>/arrived-home -H "X-Secret: your_trigger_secret"
 
 Returns `429` with `remainingMinutes` if the cooldown is still active.
 
+### `POST /arrived-uni`
+Same as `/arrived-home`, but pushes `UNI_MESSAGE` and tracks its own independent cooldown.
+
+```bash
+curl -X POST https://<PROJECT_REF>.supabase.co/functions/v1/arrived-uni -H "X-Secret: your_trigger_secret"
+```
+
 ### `POST /webhook`
 LINE webhook endpoint. Verifies `X-Line-Signature` automatically. Handles `follow`/`unfollow` (1:1) and `join`/`leave` (group) events.
 
@@ -84,19 +119,28 @@ LINE webhook endpoint. Verifies `X-Line-Signature` automatically. Handles `follo
 Protected. Returns all active recipients with their display names.
 
 ```bash
-curl https://<host>/recipients -H "X-Secret: your_trigger_secret"
+curl https://<PROJECT_REF>.supabase.co/functions/v1/recipients -H "X-Secret: your_trigger_secret"
 ```
 
 ### `DELETE /recipients/:userId`
 Protected. Removes a recipient by user ID or group ID.
 
 ```bash
-curl -X DELETE https://<host>/recipients/Uabc123 -H "X-Secret: your_trigger_secret"
+curl -X DELETE https://<PROJECT_REF>.supabase.co/functions/v1/recipients/Uabc123 -H "X-Secret: your_trigger_secret"
 ```
 
 ### `GET /health`
-Returns server uptime, active recipient count, and monthly push count (no auth required).
+Returns active recipient count and monthly push count (no auth required).
+
+```bash
+curl https://<PROJECT_REF>.supabase.co/functions/v1/health
+```
+
+**Response:**
+```json
+{ "status": "ok", "activeRecipients": 2, "monthlyMessageCount": 12 }
+```
 
 ## Rate Limits
 
-The LINE free tier allows **500 push messages per month**. The bot logs a warning when the monthly count reaches **400** (80%). Monitor `GET /health` to track usage.
+The LINE free tier allows **500 push messages per month**. Monitor `GET /health` to track the current `monthlyMessageCount`.
