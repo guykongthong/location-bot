@@ -4,14 +4,17 @@ A LINE push notification bot that sends a message to all active recipients when 
 
 ## How it works
 
-```
-iPhone joins home Wi-Fi
-        |
-iOS Shortcut automation  --POST + X-Secret-->  arrived-home edge function
-                                                      |
-                                       reads active recipients from Postgres
-                                                      |
-                                       LINE Messaging API push to each one
+```mermaid
+flowchart LR
+    A["iPhone joins home or uni Wi-Fi"] --> B["iOS Shortcut automation"]
+    B -- "POST + X-Secret" --> C["arrived-home / arrived-uni<br/>edge function"]
+    C --> D[("Postgres<br/>active recipients")]
+    D --> C
+    C -- "push message" --> E["LINE Messaging API"]
+    E --> F["Friends and groups<br/>who follow the bot"]
+
+    G["Someone follows the bot<br/>or invites it to a group"] --> H["webhook edge function"]
+    H -- "save recipient" --> D
 ```
 
 People get added automatically: anyone who follows the bot, or any group the bot is invited to, is saved as a recipient by the LINE webhook. Each trigger has its own 30-minute cooldown so a flaky Wi-Fi connection does not send duplicates.
